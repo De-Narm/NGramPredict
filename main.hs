@@ -2,7 +2,7 @@ module Main where
 
 --TODO: test if files exist
 --TODO: error if selected line does not exist
---TODO: fox special characters
+--TODO: fix special characters
 
 import Prelude hiding (filter)
 import System.Environment (getArgs)
@@ -80,10 +80,15 @@ filter xs ys = wildcard xs ys $ match [] xs ys
                 split 1 _  = []
                 split m ns = split (m - 1) ns ++ [delete (ns !! (m - 1)) ns]
 
---Dummy-Funktionen
-
 sort :: Int -> [[String]] -> [[String]]
-sort _ _ = [["Test"]]
+sort 0 _ = []
+sort x ys = sort (x-1) ys ++ [max ys []]
+    where 
+        max :: [[String]] -> [String] -> []
+        max [] ys = ys
+        max xs ys = if head $ head xs > head ys
+            then max (tail xs) (head xs)
+            else max (tail xs) ys 
 
 write :: [[String]] -> IO()
-write _ = putStr "Chain works somehow.\n"
+write xs =  
