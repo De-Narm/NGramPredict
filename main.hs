@@ -3,6 +3,7 @@ module Main where
 --TODO: test if files exist
 --TODO: error if selected line does not exist
 --TODO: fix special characters
+--TODO: call wildcard if length list < num
 
 import Prelude hiding (filter)
 import System.Environment (getArgs)
@@ -67,7 +68,7 @@ filter :: [String] -> [[String]] -> [[String]]
 filter xs ys = wildcard xs ys $ match [] xs ys
     where 
         match :: [[String]] -> [String] -> [[String]] -> [[String]]
-        match xs _ [] = xs
+        match is _ [] = is
         match is js ks = if not $ isSubsequenceOf js (init . init $ head ks)
             then match is js (tail ks)
             else match (is ++ [head ks]) (js) (tail ks)
@@ -82,13 +83,15 @@ filter xs ys = wildcard xs ys $ match [] xs ys
 
 sort :: Int -> [[String]] -> [[String]]
 sort 0 _ = []
-sort x ys = sort (x-1) ys ++ [max ys []]
+sort x ys = (\ele -> [ele] ++ sort (x-1) (delete ele ys))(maxP ys [])
     where 
-        max :: [[String]] -> [String] -> []
-        max [] ys = ys
-        max xs ys = if head $ head xs > head ys
-            then max (tail xs) (head xs)
-            else max (tail xs) ys 
+        maxP :: [[String]] -> [String] -> [String]
+        maxP [] js = js
+        maxP is [] = maxP (tail is) (head is)
+        maxP is js = if (head $ head is) > (head js)
+            then maxP (tail is) (head is)
+            else maxP (tail is) js 
 
 write :: [[String]] -> IO()
-write xs =  
+write [] = putStr "\n"
+write xs =  putStr (last . init $ head xs) >> putStr "\n" >> write (tail xs)
