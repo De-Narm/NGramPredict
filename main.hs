@@ -1,14 +1,15 @@
 module Main where
 
---TODO: test if files exist
 --TODO: error if selected line does not exist
+--TODO: error if selected file does not exist
 --TODO: fix special characters
---TODO: call wildcard if length list < num
+--TODO: change wildcard to other ngrams
+--      maybe both
 
 import Prelude hiding (filter)
 import System.Environment (getArgs)
 import Data.String (words, lines)
-import Data.List (isSubsequenceOf, delete)
+import Data.List (isSubsequenceOf, delete, nubBy)
 
 main :: IO()
 main = getArgs >>= \flags -> validate flags
@@ -20,13 +21,15 @@ validate xs = if length xs /= 5
     then putStr "Wrong number of arguments!\n"
     else (getNGram file line column) >>= \nGram 
         -> (getList (length nGram + 1) model) >>= \nGramList
-        -> write $ sort num (filter nGram nGramList)
+        -> write $ sort num (nubBy tailEq $ filter num nGram nGramList)
         where 
             num = read $ xs !! 0
             model = xs !! 1
             file = xs !! 2
             line = read $ xs !! 3
             column = read $ xs !! 4
+            tailEq :: [String] -> [String] -> Bool
+            tailEq is js = (last $ init is) == (last $ init js)
            
 getNGram :: String -> Int -> Int -> IO [String]
 getNGram xs y z = (readFile xs) >>= \str 
@@ -56,30 +59,40 @@ getList x ys = (readFile ys) >>= \str
     -> return $ take (amount x (lines str)) (beginning x (lines str))
     where
         beginning :: Int -> [String] -> [[String]]
-        beginning i js = if head js /= "\\" ++ show i ++ "-grams:"
+        beginning i js = 
+            if head js /= "\\" ++ show i ++ "-grams:"
             then beginning i (tail js)
             else map words (tail js)
         amount :: Int -> [String] -> Int
-        amount i js = if (take 7 $ head js) /= "ngram " ++ (show i)
+        amount i js = 
+            if (take 7 $ head js) /= "ngram " ++ (show i)
             then amount i (tail js)
             else read $ drop 8 $ head js
 
-filter :: [String] -> [[String]] -> [[String]]
-filter xs ys = wildcard xs ys $ match [] xs ys
+filter :: Int -> [String] -> [[String]] -> [[String]]
+filter x ys zs = wildcard x ys zs $ match [] ys zs
     where 
         match :: [[String]] -> [String] -> [[String]] -> [[String]]
         match is _ [] = is
-        match is js ks = if not $ isSubsequenceOf js (init . init $ head ks)
+        match is js ks = 
+            if not $ isSubsequenceOf js (init . init $ head ks)
             then match is js (tail ks)
             else match (is ++ [head ks]) (js) (tail ks)
-        wildcard :: [String] -> [[String]] -> [[String]] -> [[String]]
-        wildcard is js ks = if ks /= []
+        wildcard :: Int -> [String] -> [[String]] -> [[String]] -> [[String]]
+        wildcard h is js ks = 
+            if length ks >= h
             then ks
-            else concatMap (\str -> match [] str js) (split (length is) is) 
-            where
-                split :: Int -> [String] -> [[String]]
-                split 1 _  = []
-                split m ns = split (m - 1) ns ++ [delete (ns !! (m - 1)) ns]
+            else inc ks 
+                ++ concatMap (\str -> match [] str js)(split (length is) is) 
+                where
+                    split :: Int -> [String] -> [[String]]
+                    split 1 _  = []
+                    split m ns = split (m - 1) ns 
+                        ++ [delete (ns !! (m - 1)) ns]
+                    inc :: [[String]] -> [[String]]
+                    inc [] = []
+                    inc ms = [["1" ++ (head $ head ms)] ++ (tail $ head ms)] 
+                        ++ (inc $ tail ms)
 
 sort :: Int -> [[String]] -> [[String]]
 sort 0 _ = []
@@ -88,10 +101,14 @@ sort x ys = (\ele -> [ele] ++ sort (x-1) (delete ele ys))(maxP ys [])
         maxP :: [[String]] -> [String] -> [String]
         maxP [] js = js
         maxP is [] = maxP (tail is) (head is)
-        maxP is js = if (head $ head is) > (head js)
+        maxP is js = 
+            if (head $ head is) > (head js)
             then maxP (tail is) (head is)
             else maxP (tail is) js 
 
 write :: [[String]] -> IO()
 write [] = putStr "\n"
-write xs =  putStr (last . init $ head xs) >> putStr "\n" >> write (tail xs)
+write xs = 
+    if (length $ head xs) == 0
+    then putStr "\n"
+    else putStr (last . init $ head xs) >> putStr "\n" >> write (tail xs)
