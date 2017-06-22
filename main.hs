@@ -1,11 +1,5 @@
 module Main where
 
---TODO: error if selected line does not exist
---TODO: error if selected file does not exist
---TODO: fix special characters
---TODO: change wildcard to other ngrams
---      maybe both
-
 import Prelude hiding (filter)
 import System.Environment (getArgs)
 import Data.String (words, lines)
@@ -16,21 +10,15 @@ main = getArgs >>= \flags -> validate flags
 
 validate :: [String] -> IO()
 validate [] = putStr "Usage: NGramPredict ‹number› ‹model›" 
-    >> putStr "‹file› ‹line› ‹column›\n"
+    >> putStr " ‹file› ‹line› ‹column›\n"
 validate xs = if length xs /= 5
     then putStr "Wrong number of arguments!\n"
-    else (getNGram file line column) >>= \nGram 
-        -> (getList (length nGram + 1) model) >>= \nGramList
-        -> write $ sort num (nubBy tailEq $ filter num nGram nGramList)
-        where 
-            num = read $ xs !! 0
-            model = xs !! 1
-            file = xs !! 2
-            line = read $ xs !! 3
-            column = read $ xs !! 4
-            tailEq :: [String] -> [String] -> Bool
-            tailEq is js = (last $ init is) == (last $ init js)
-           
+    else (getNGram file line column) >>= \nGram -> loop xs nGram []
+    where
+        file = xs !! 2
+        line = read $ xs !! 3
+        column = read $ xs !! 4
+
 getNGram :: String -> Int -> Int -> IO [String]
 getNGram xs y z = (readFile xs) >>= \str 
     -> return 
@@ -51,8 +39,28 @@ getNGram xs y z = (readFile xs) >>= \str
         findNGram :: [String] -> [String] -> [String]
         findNGram is js 
             | length is == 4 = is
-            | elem (last $ last js) ['.', ',', ';', '!', '?', '-'] = is
+            | elem (last $ last js) ['.', ',', ';', '!', '?', '-', ')'] = is
             | otherwise = findNGram ([last js] ++ is) (init js)
+
+loop :: [String] -> [String] -> [[String]] -> IO()
+loop xs [] zs = if length zs >= num
+    then write num zs
+    else (rest model (num - (length zs))) >>= \rList -> write num (zs ++ rList)
+        where
+            num = read $ xs !! 0
+            model = xs !! 1
+            rest :: String -> Int -> IO [[String]]
+            rest is j = (getList 1 is) >>= \nGList 
+                -> return $ sort j (drop 3 nGList)
+loop xs ys zs = if length zs >= num
+    then loop [] [] zs
+    else (getList (length ys + 1) model) >>= \nGList
+        -> loop xs (tail ys) (nubBy tailEq (zs ++ sort num (filter ys nGList)))
+        where
+            num = read $ xs !! 0
+            model = xs !! 1
+            tailEq :: [String] -> [String] -> Bool
+            tailEq is js = (last $ init is) == (last $ init js)
 
 getList :: Int -> String -> IO [[String]]
 getList x ys = (readFile ys) >>= \str 
@@ -69,8 +77,8 @@ getList x ys = (readFile ys) >>= \str
             then amount i (tail js)
             else read $ drop 8 $ head js
 
-filter :: Int -> [String] -> [[String]] -> [[String]]
-filter x ys zs = wildcard x ys zs $ match [] ys zs
+filter :: [String] -> [[String]] -> [[String]]
+filter xs ys = match [] xs ys
     where 
         match :: [[String]] -> [String] -> [[String]] -> [[String]]
         match is _ [] = is
@@ -78,37 +86,22 @@ filter x ys zs = wildcard x ys zs $ match [] ys zs
             if not $ isSubsequenceOf js (init . init $ head ks)
             then match is js (tail ks)
             else match (is ++ [head ks]) (js) (tail ks)
-        wildcard :: Int -> [String] -> [[String]] -> [[String]] -> [[String]]
-        wildcard h is js ks = 
-            if length ks >= h
-            then ks
-            else inc ks 
-                ++ concatMap (\str -> match [] str js)(split (length is) is) 
-                where
-                    split :: Int -> [String] -> [[String]]
-                    split 1 _  = []
-                    split m ns = split (m - 1) ns 
-                        ++ [delete (ns !! (m - 1)) ns]
-                    inc :: [[String]] -> [[String]]
-                    inc [] = []
-                    inc ms = [["1" ++ (head $ head ms)] ++ (tail $ head ms)] 
-                        ++ (inc $ tail ms)
 
 sort :: Int -> [[String]] -> [[String]]
 sort 0 _ = []
+sort _ [] = []
 sort x ys = (\ele -> [ele] ++ sort (x-1) (delete ele ys))(maxP ys [])
     where 
         maxP :: [[String]] -> [String] -> [String]
         maxP [] js = js
         maxP is [] = maxP (tail is) (head is)
         maxP is js = 
-            if (head $ head is) > (head js)
+            if (head $ head is) < (head js)
             then maxP (tail is) (head is)
             else maxP (tail is) js 
 
-write :: [[String]] -> IO()
-write [] = putStr "\n"
-write xs = 
-    if (length $ head xs) == 0
-    then putStr "\n"
-    else putStr (last . init $ head xs) >> putStr "\n" >> write (tail xs)
+write :: Int -> [[String]] -> IO()
+write _ [] = putStr "\n"
+write 0 _ = putStr "\n"
+write x ys = putStr (last . init $ head ys) >> putStr "\n" 
+    >> write (x -1) (tail ys)
