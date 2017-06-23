@@ -13,14 +13,14 @@ validate [] = putStr "Usage: NGramPredict ‹number› ‹model›"
     >> putStr " ‹file› ‹line› ‹column›\n"
 validate xs = if length xs /= 5
     then putStr "Wrong number of arguments!\n"
-    else (getNGram file line column) >>= \nGram -> loop xs nGram []
+    else getNGram file line column >>= \nGram -> loop xs nGram []
     where
         file = xs !! 2
         line = read $ xs !! 3
         column = read $ xs !! 4
 
 getNGram :: String -> Int -> Int -> IO [String]
-getNGram xs y z = (readFile xs) >>= \str 
+getNGram xs y z = readFile xs >>= \str 
     -> return 
     $ findNGram [] $ selectColumn  z $ selectLines y (map words (lines str))
     where 
@@ -33,37 +33,37 @@ getNGram xs y z = (readFile xs) >>= \str
         selectColumn i js =
             let t = init $ last js
             in
-                if ((length t) + (sum $ map length t) + 1) > i
-                then selectColumn i ([head js] ++ [t])
+                if (length t + sum (map length t) + 1) > i
+                then selectColumn i (head js : [t])
                 else concat js
         findNGram :: [String] -> [String] -> [String]
         findNGram is js 
             | length is == 4 = is
             | elem (last $ last js) ['.', ',', ';', '!', '?', '-', ')'] = is
-            | otherwise = findNGram ([last js] ++ is) (init js)
+            | otherwise = findNGram (last js : is) (init js)
 
 loop :: [String] -> [String] -> [[String]] -> IO()
 loop xs [] zs = if length zs >= num
     then write num zs
-    else (rest model (num - (length zs))) >>= \rList -> write num (zs ++ rList)
+    else rest model (num - length zs) >>= \rList -> write num (zs ++ rList)
         where
-            num = read $ xs !! 0
+            num = read $ head xs
             model = xs !! 1
             rest :: String -> Int -> IO [[String]]
-            rest is j = (getList 1 is) >>= \nGList 
+            rest is j = getList 1 is >>= \nGList 
                 -> return $ sort j (drop 3 nGList)
 loop xs ys zs = if length zs >= num
     then loop [] [] zs
-    else (getList (length ys + 1) model) >>= \nGList
+    else getList (length ys + 1) model >>= \nGList
         -> loop xs (tail ys) (nubBy tailEq (zs ++ sort num (filter ys nGList)))
         where
-            num = read $ xs !! 0
+            num = read $ head xs
             model = xs !! 1
             tailEq :: [String] -> [String] -> Bool
-            tailEq is js = (last $ init is) == (last $ init js)
+            tailEq is js = last (init is) == last (init js)
 
 getList :: Int -> String -> IO [[String]]
-getList x ys = (readFile ys) >>= \str 
+getList x ys = readFile ys >>= \str 
     -> return $ take (amount x (lines str)) (beginning x (lines str))
     where
         beginning :: Int -> [String] -> [[String]]
@@ -73,30 +73,30 @@ getList x ys = (readFile ys) >>= \str
             else map words (tail js)
         amount :: Int -> [String] -> Int
         amount i js = 
-            if (take 7 $ head js) /= "ngram " ++ (show i)
+            if take 7 (head js) /= "ngram " ++ show i
             then amount i (tail js)
             else read $ drop 8 $ head js
 
 filter :: [String] -> [[String]] -> [[String]]
-filter xs ys = match [] xs ys
+filter = match []
     where 
         match :: [[String]] -> [String] -> [[String]] -> [[String]]
         match is _ [] = is
         match is js ks = 
             if not $ isSubsequenceOf js (init . init $ head ks)
             then match is js (tail ks)
-            else match (is ++ [head ks]) (js) (tail ks)
+            else match (is ++ [head ks]) js (tail ks)
 
 sort :: Int -> [[String]] -> [[String]]
 sort 0 _ = []
 sort _ [] = []
-sort x ys = (\ele -> [ele] ++ sort (x-1) (delete ele ys))(maxP ys [])
+sort x ys = (\ele -> ele : sort (x-1) (delete ele ys))(maxP ys [])
     where 
         maxP :: [[String]] -> [String] -> [String]
         maxP [] js = js
         maxP is [] = maxP (tail is) (head is)
         maxP is js = 
-            if (head $ head is) < (head js)
+            if head (head is) < head js
             then maxP (tail is) (head is)
             else maxP (tail is) js 
 
