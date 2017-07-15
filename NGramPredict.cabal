@@ -3,7 +3,7 @@
 
 name:                NGramPredict
 version:             0.1.0.0
--- synopsis:            
+synopsis:            NGram prediction
 -- description:         
 license:             BSD3
 license-file:        LICENSE
@@ -17,8 +17,8 @@ cabal-version:       >=1.10
 
 executable NGramPredict
   main-is:             main.hs
-  -- other-modules:       
+  other-modules:       regex-posix
   -- other-extensions:    
-  build-depends:       base >=4.9 && <4.10
+  build-depends:       base >=4.9 && <4.10, regex-posix, containers
   -- hs-source-dirs:      
   default-language:    Haskell2010

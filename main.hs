@@ -1,176 +1,100 @@
-{-|
-Module      : 
-Description : NGram Prediction of words
-Copyright   : 
-License     : BSD3
-Maintainer  : 
-Stability   : experimental
-Portability : POSIX
+module Main where
 
-Predicts the next word based on an input and a given model. 
--}
-
-module Main (
-    -- * NGramPredict
-    main
-    -- ** IO
-    , validate
-    , getNGram
-    , getList
-    , write
-    -- ** Predict
-    , loop
-    , filter
-    , sort
-    )where
-
-import Prelude hiding (filter)
-import System.Environment (getArgs)
+import Data.Char (isPunctuation)
+import qualified Data.Map.Strict as Map
 import Data.String (words, lines)
-import Data.List (isSubsequenceOf, delete, nubBy)
+import Data.List (sort, nubBy, isSubsequenceOf, isPrefixOf)
+import System.Environment (getArgs)
+import System.IO (hPutStr, stderr)
 
--- -----------------------------------------------------------------------------
--- NGramPredict main function
-
--- | Gets flags and validates them.
--- Required flags are ´NGramPredict \<number\> \<model\> 
--- \<file\> \<line\> \<column\>´
 main :: IO()
-main = getArgs >>= \flags -> validate flags
+main = getArgs >>= validate
 
--- -----------------------------------------------------------------------------
--- IO functions
-
--- | Controls whether or not enoughs arguments are given,
--- the base functions themselves test if the arguments
--- are of the right type
-validate :: [String]    -- ^ runtime flags
-    -> IO()             -- ^ return value
-validate [] = putStr "Usage: NGramPredict ‹number› ‹model›" 
-    >> putStr " ‹file› ‹line› ‹column›\n"
+validate :: [String] -> IO()
 validate xs = if length xs /= 5
-    then putStr "Wrong number of arguments!\n"
-    else getNGram file line column >>= \nGram -> loop xs nGram []
-    where
-        file = xs !! 2
-        line = read $ xs !! 3
-        column = read $ xs !! 4
+    then hPutStr stderr "Usage: NGramPredict <number> <model> <file> "
+        >> hPutStr stderr "<line> <column>\n"
+    else readFile (xs !! 2) >>= \file ->
+        readFile (xs !! 1) >>= \model ->
+        write . take number . nubBy predEq . sort . predict (getModel model) [] $ getNGram file line column $ getMaxN (tail $ lines model) 0
+        where
+            number = read $ head xs
+            line = read $ xs !! 3
+            column = read $ xs !! 4
+            predEq :: [String] -> [String] -> Bool
+            predEq is js = (is !! 1) == (js !! 1)
+            getMaxN :: [String] -> Int -> Int
+            getMaxN is j = if head is == []
+                then j
+                else getMaxN (tail is) (read [(head is) !! 6])
 
--- | A 4-gram is build based on the given line and column. 
--- Should the function encounter certain punctuation, 
--- a shorter n-gram is build.
--- No n-gram is build when the given word is followed up by punctuation.
-getNGram :: String  -- ^ path to text file
-    -> Int          -- ^ line
-    -> Int          -- ^ column
-    -> IO [String]  -- ^ return value
-getNGram xs y z = readFile xs >>= \str 
-    -> return 
-    $ findNGram [] $ selectColumn  z $ selectLines y (map words (lines str))
+getModel :: String -> Map.Map [String] [[String]]
+getModel xs = traverse Map.empty $ lines xs
+    where
+        traverse :: Map.Map [String] [[String]] -> [String] -> Map.Map [String] [[String]]
+        traverse is [] = is
+        traverse is js 
+            | head js == [] = traverse is (tail js)
+            | isSubsequenceOf "\\" (head js)  = traverse is (tail js)
+            | isPrefixOf "ngram" (head js)  = traverse is (tail js)
+            | otherwise = traverse
+                (Map.insertWith (++) torso ([(head line) : prediction : [bow]]) is)
+                (tail js)
+                where
+                    torso = if (head $ last line) /= '-'
+                        && (head $ last line) /= '0'
+                        then init $ tail line
+                        else init . init $ tail line
+                    bow = if (head $ last line) /= '-'
+                        && (head $ last line) /= '0'
+                        then "-9999999.9"
+                        else last line
+                    prediction = if (head $ last line) /= '-'
+                        && (head $ last line) /= '0'
+                        then last line
+                        else last $ init line
+                    line = words $ head js
+
+getNGram :: String -> Int -> Int -> Int -> [String]
+getNGram ws x y z = 
+    findNGram z [] $ selectColumn  y $ selectLines z x $ map words (lines ws)
     where 
-        selectLines :: Int -> [[String]] -> [[String]]
-        selectLines i js
-            | i == 1 = take 1 js
-            | length js >= i  = take 2 (drop (i - 2) js)
-            | otherwise  = []
+        selectLines :: Int -> Int -> [[String]] -> [[String]]
+        selectLines i j ks = if j > i 
+            then take i $ drop (j - i) ks
+            else take j ks
         selectColumn :: Int -> [[String]] -> [String]
         selectColumn i js =
             let t = init $ last js
             in
                 if (length t + sum (map length t) + 1) > i
-                then selectColumn i (head js : [t])
+                then selectColumn i (init js ++ [t])
                 else concat js
-        findNGram :: [String] -> [String] -> [String]
-        findNGram is js 
-            | length is == 4 = is
-            | elem (last $ last js) ['.', ',', ';', '!', '?', '-', ')'] = is
-            | otherwise = findNGram (last js : is) (init js)
+        findNGram :: Int -> [String] -> [String] -> [String]
+        findNGram i js [] = js
+        findNGram i js ks
+            | length js == i = js
+            | isPunctuation . last $ last ks = js
+            | otherwise = findNGram i (last ks : js) (init ks)
 
--- | Given a valid model, the function builds a list with all
--- n-grams of a certain length.
-getList :: Int          -- ^ length of n-grams to search for
-    -> String           -- ^ model file path
-    -> IO [[String]]    -- ^ return value
-getList x ys = readFile ys >>= \str 
-    -> return $ take (amount x (lines str)) (beginning x (lines str))
-    where
-        beginning :: Int -> [String] -> [[String]]
-        beginning i js = 
-            if head js /= "\\" ++ show i ++ "-grams:"
-            then beginning i (tail js)
-            else map words (tail js)
-        amount :: Int -> [String] -> Int
-        amount i js = 
-            if take 7 (head js) /= "ngram " ++ show i
-            then amount i (tail js)
-            else read $ drop 8 $ head js
-
--- | Writes a certain number of predictions from a list of n-grams.
-write :: Int        -- ^ number of values to print
-    -> [[String]]   -- ^ list of n-grams
-    -> IO()         -- ^ return value
-write _ [] = putStr "\n"
-write 0 _ = putStr "\n"
-write x ys = putStr (last . init $ head ys) >> putStr "\n" 
-    >> write (x -1) (tail ys)
-
--- -----------------------------------------------------------------------------
--- Predict
-
--- | Loops through all possible sizes of n-grams and builds a list of
--- predictions. Results from longer n-grams appear first in the list.
--- If more predictions are used than actually found, the most common
--- 1-grams are searched.
-loop :: [String]    -- ^ runtime flags
-    -> [String]     -- ^ n-gram
-    -> [[String]]   -- ^ list of predicted n-ngrams
-    -> IO()         -- ^ return value
-loop xs [] zs = if length zs >= num
-    then write num zs
-    else rest model (num - length zs) >>= \rList -> write num (zs ++ rList)
-        where
-            num = read $ head xs
-            model = xs !! 1
-            rest :: String -> Int -> IO [[String]]
-            rest is j = getList 1 is >>= \nGList 
-                -> return $ sort j (drop 3 nGList)
-loop xs ys zs = if length zs >= num
-    then loop [] [] zs
-    else getList (length ys + 1) model >>= \nGList
-        -> loop xs (tail ys) (nubBy tailEq (zs ++ sort num (filter ys nGList)))
-        where
-            num = read $ head xs
-            model = xs !! 1
-            tailEq :: [String] -> [String] -> Bool
-            tailEq is js = last (init is) == last (init js)
-
--- | Takes a list of n-grams and one (n-1)-gram. The resultig list
--- contains all n-grams the is (n-1)-gram is a prefix of.
-filter :: [String]  -- ^ (n-1)-gram
-    -> [[String]]   -- ^ list of n-ngrams
-    -> [[String]]   -- ^ return value
-filter = match []
+predict :: Map.Map [String] [[String]] -> [String] -> [String] -> [[String]]
+predict _ _ [] = []
+predict xs [] zs = (Map.findWithDefault [] zs xs) ++ predict xs [head zs] (tail zs)
+predict xs ys zs = predictions ++ predict xs (ys ++ [head zs]) (tail zs)
     where 
-        match :: [[String]] -> [String] -> [[String]] -> [[String]]
-        match is _ [] = is
-        match is js ks = 
-            if not $ isSubsequenceOf js (init . init $ head ks)
-            then match is js (tail ks)
-            else match (is ++ [head ks]) js (tail ks)
+        predictions = correctP (select (last ys) (Map.findWithDefault [] (init ys) xs)) (Map.findWithDefault [] zs xs)
+        select :: String -> [[String]] -> [String]
+        select _ [] = []
+        select [] _ = []
+        select ms ns = if ms == ((head ns) !! 1)
+            then head ns
+            else select ms (tail ns)
+        correctP :: [String] -> [[String]] -> [[String]]
+        correctP [] ns = ns
+        correctP _ [] = []
+        correctP ms ns = ([show $ logBase 10.0 (10.0 ** (read $ last ms) * 10.0 ** (read . head $ head ns))]
+            ++ (tail $ head ns)) : correctP ms (tail ns)
 
--- | Performs a linear search until the sorted list is exactly the asked 
--- length. All remaining unsorted elements are dropped.
-sort :: Int         -- ^ number of elements to sort
-    -> [[String]]   -- ^ list of n-grams
-    -> [[String]]   -- ^ return value
-sort 0 _ = []
-sort _ [] = []
-sort x ys = (\ele -> ele : sort (x-1) (delete ele ys))(maxP ys [])
-    where 
-        maxP :: [[String]] -> [String] -> [String]
-        maxP [] js = js
-        maxP is [] = maxP (tail is) (head is)
-        maxP is js = 
-            if head (head is) < head js
-            then maxP (tail is) (head is)
-            else maxP (tail is) js 
+write :: [[String]] -> IO() 
+write [] = putStr "\n"
+write xs = putStr ((head xs) !! 1) >> putStr "\n" >> write (tail xs)
